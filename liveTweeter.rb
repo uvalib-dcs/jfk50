@@ -1,19 +1,5 @@
 #!/usr/bin/env ruby
 
-# LiveTweeter
-#
-# A simple Ruby program for scheuduling tweets
-# stored in a CSV file.  Written for the 
-# 50th anniversary of the assassination of the
-# President in Dallas, TX.
-#
-# Digital Curation Services, University of Virginia Library
-# Charlottesville, VA
-#
-# see https://dev.twitter.com/docs for details on
-# the Twitter API
-
-
 require 'date'
 require 'twitter'
 require 'rufus-scheduler'
@@ -23,14 +9,15 @@ REQ_TOKEN_URL="https://api.twitter.com/oauth/request_token"
 AUTH_URL="https://api.twitter.com/oauth/authorize"
 ACCESS_TOKEN_URL="https://api.twitter.com/oauth/access_token"
 
-$hashtags="#JFK50 #UVA"
+$hash_tag_1="#JFK50"
+$hash_tag_2="#UVA"
 $link_to_exhibit="http://bit.ly/1cGRk6e"
 
-# twitter account credentials (go to http://dev.twitter.com to register your app)
-CONSUMER_KEY="your_consumer_key"
-CONSUMER_SECRET="your_consumer_secret"
-ACCESS_TOKEN="your_access_key"
-ACCESS_TOKEN_SECRET="your_access_secret"
+# app credentials
+CONSUMER_KEY=""
+CONSUMER_SECRET=""
+ACCESS_TOKEN=""
+ACCESS_TOKEN_SECRET=""
 
 
 client = Twitter::REST::Client.new do |config|
@@ -46,20 +33,24 @@ scheduler = Rufus::Scheduler.new
 start_time=Time.now
 tweet_data=[]
 
-CSV.foreach("./TeletypeForTweeting.csv", { :col_sep => "\t" }) do |row| 
-  tweet_data << row.to_csv.chop
+quote_chars = %w(" | ~ ^ & *)
+
+file=File.open("./TeletypeForTweeting.csv")
+begin
+  tweet_data = CSV.read(file, { :col_sep => "\t", :quote_char => quote_chars.shift })
+rescue
+  quote_chars.empty? ? raise : retry
 end
 tweet_data.shift # remove CSV header row
 
 def parse(row)
-  one, two, three = "", "", ""
-  match = row.match(/^([^,]*),([^,]*),(.*)$/)
-  if ! match.nil?
-    one = match[1] || ""
-    two = match[2].gsub(/;/, ':') || ""
-    three = match[3] || ""
-  end
-  return one, two, three
+  one   = row[0] || ""
+  two   = row[1] || ""
+  three = row[2] || ""
+  four  = row[3] || ""
+  two.gsub(/;/, ':')
+
+  return one, two, three, four
 end
 
 def scheduler.handle_exception(job, exception)
@@ -67,15 +58,15 @@ def scheduler.handle_exception(job, exception)
 end
 
 def build_chyron(timestamp, content)
-  "You are following the UPI teletype as broadcast #{timestamp} November 22nd, 1963 #{$hashtags} #{$link_to_exhibit}"
+  "You are following the UPI teletype as broadcast #{timestamp} November 22nd, 1963 #{$hash_tag_1} #{$hash_tag_2} #{$link_to_exhibit}"
 end
 
 @last_timestamp = Time.now
-@time_adjust =  (120 * 60)
+@time_adjust =  (6 * (60 * 60)) + (17 * 60)
 
-tweet_data[0..200].each_with_index do |datum,index|
-  next if datum.length < 5
-  code,timestamp,content = parse(datum)
+tweet_data[0..26].each_with_index do |data,index|
+  next if data.to_s.length < 5
+  code,timestamp,content,url = parse(data)
 
   $stdout.puts "read #{timestamp} from row.  Last tweet time was #{@last_timestamp}"
   if timestamp == "" 
@@ -88,8 +79,20 @@ tweet_data[0..200].each_with_index do |datum,index|
 
    # header rows should be turned into tweet reminders
   if content == code
-    content=build_chyron(timestamp,content) 
+    content=build_chyron(data[1],content)
+  elsif ! url.nil?
+    if content.length < 125
+      content = content + " #{$hash_tag_1} #{$hash_tag_2}"
+    end
+    if content.length < 115 and url.to_s.length < 24
+      content = content + " #{url}"
+    end
+  else
+    if content.length < 125
+      content = content + " #{$hash_tag_1} #{$hash_tag_2}"
+    end
   end
+  
 
   # see if we're already tweeting at this time
   if tweet_time > @last_timestamp
@@ -109,7 +112,7 @@ tweet_data[0..200].each_with_index do |datum,index|
       if index % 2 == 0
         tweet = client.update(content)
       else
-        tweet = backup_client.update(content)
+        tweet = client.update(content)
       end
       id = tweet.id
       brief = content[0..19]
@@ -131,14 +134,13 @@ scheduler.at start_time do
 end
 scheduler.at Time.now do
   # do something at a given point in time
-  a,b,c = parse(tweet_data[1])
+  a,b,c = tweet_data[1][0], tweet_data[1][1], tweet_data[1][2]
   t = Time.parse(b) + @time_adjust
-  client.update("Stay tuned for our live tweeting the United Press International wire feed from Nov 22, 1936 #{$hashtags} #{$link_to_exhibit}")
+  client.update("We'll be tweeting the 1963 UPI Teletype in a few minutes. Stay tuned! #{$hash_tag_1} #{$hash_tag_2} #{$link_to_exhibit}")
   s="#{$0} it is now #{Time.now}. Starting at #{t.to_s}..."
   $stdout.puts s
 end
 
 
 while 1 > 0 do
-  # suspend program in execution until your tweets have been completed.
 end
