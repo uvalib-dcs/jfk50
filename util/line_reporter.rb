@@ -1,36 +1,37 @@
 #!/usr/bin/env ruby
-#
-# line_reporter.rb
-#
-# simple command-line script for scanning
-# a CSV file of potential tweets
-# and identifying long lines
-# (for editing)
-#
 
 require 'csv'
 
-@limit = ARGV[0].to_i || 120
+@limit = 120
+@limit = ARGV[0].to_i if ARGV[0].to_i > 0
 
-tweet_data=[]
+@bad_row_count = 0
 
-CSV.foreach("./TeletypeForTweeting.csv") do |row| 
-  tweet_data << row.to_csv.chop
+quote_chars = %w(" | ~ ^ & *)
+
+file=File.open("./TeletypeForTweeting.csv")
+begin
+  tweet_data = CSV.read(file, { :col_sep => "\t", :quote_char => quote_chars.shift })
+rescue
+  quote_chars.empty? ? raise : retry
 end
+tweet_data.shift # remove CSV header row
 
 def parse(row)
-  one, two, three = "", "", ""
-  match = row.match(/^([^,]*),([^,]*),(.*)$/)
-  if ! match.nil?
-    one = match[1] || ""
-    two = match[2] || ""
-    three = match[3] || ""
-  end
-  return one, two, three
+  one   = row[0] || "" 
+  two   = row[1] || ""
+  three = row[2] || ""
+  four  = row[3] || ""
+  two.gsub(/;/, ':')
+
+  return one, two, three, four
 end
 
 tweet_data.each_with_index do |line,index| 
-  code,timestamp,content=parse(line)
-  puts "#{index} #{content}" if content.length > @limit
+  code,timestamp,content,url = parse(line)
+  if content.length > @limit
+    puts "#{index} #{content}" 
+    @bad_row_count += 1
+  end
 end
-puts "rows with tweets longer than #{@limit}"
+puts "#{@bad_row_count} rows with tweets longer than #{@limit}"
